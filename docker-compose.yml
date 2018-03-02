@@ -1,0 +1,115 @@
+#docker network create -d overlay --attachable apm_sky
+version: '3.1'
+services:
+  skywalking-webui:
+    image: skywalking/skywalking-ui
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - collector
+    environment:
+      - COLLECTOR_SERVERS=collector:10800
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == node_36
+    networks:
+      - apm_sky
+      
+  collector:
+    #image: skywalking/skywalking-collector
+    image: docker.goe.dev.com/goe_base/skywalking-collector:v2.0
+    depends_on:
+      - es1
+      - es2
+      - zookeeper-server
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == node_39
+    environment:
+      - ZK_ADDRESSES=zookeeper-server:2181
+      - ES_ADDRESSES=es1:9300
+      - Host=collector
+    networks:
+      - apm_sky
+      
+  zookeeper-server:
+    image: zookeeper:3.4.9
+    expose:
+      - "2181"
+    healthcheck:
+      test: ["CMD", "/zookeeper-3.4.9/bin/zkServer.sh", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - apm_sky
+      
+  #主elasticsearch
+  es1:
+    image: registry.cn-hangzhou.aliyuncs.com/elk-ibumblebee/elasticsearch:5.5.2
+    environment:
+      - CLUSTER_NAME=CollectorDBCluster
+      - NODE_MASTER=true
+      - NODE_NAME=es1
+      - NUMBER_OF_MASTERS=1
+    volumes:
+      - /data/data
+    ports:
+      - "9205:9200"
+      - "9305:9300"
+    deploy:
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.hostname == node_39
+    networks:
+      - apm_sky
+      
+  es2:
+    image: registry.cn-hangzhou.aliyuncs.com/elk-ibumblebee/elasticsearch:5.5.2
+    environment:
+      - CLUSTER_NAME=CollectorDBCluster
+      - NODE_MASTER=false
+      - NODE_NAME=es2
+      - DISCOVERY_SERVICE=es1
+      - NUMBER_OF_MASTERS=1
+    volumes:
+      - /data/data
+    deploy:
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.hostname == node_39
+    networks:
+      - apm_sky
+  
+#  es-server:
+#    image: elasticsearch:5.3
+#    command: "-Enode.name=TestNode -Enetwork.host=0.0.0.0 -Ehttp.cors.enabled=true -Ehttp.cors.allow-origin=* -Ethread_pool.bulk.queue_size=1000 -Ecluster.name=CollectorDBCluster"
+#    environment:
+#      - bootstrap.memory_lock=true
+#      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+#    expose:
+#      - "9200"
+#      - "9300"
+#    ports:
+#      - "9209:9200"
+#      - "9309:9300"
+#    deploy:
+#      placement:
+#        constraints:
+#          - node.hostname == node_36
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+#      interval: 10s
+#      timeout: 10s
+#      retries: 5
+networks:
+  apm_sky:
+    external: true
